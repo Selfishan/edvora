@@ -11,10 +11,12 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { Brand, SignIn } from '@/components/SignIn';
 import PYQLibrary from '@/components/PYQLibrary';
+import FocusPage from '@/components/FocusPage';
 
 type Subject = { id: string; name: string; description: string; theme: string; sort_order: number };
 type Chapter = { id: string; subject_id: string; chapter_number: number; title: string; description: string; ncert_unit: string; notes_status: 'available' | 'coming_soon' };
 type Progress = { chapter_id: string; status: string; bookmarked: boolean };
+type FocusSummary = { id: string; subject_id: string; started_at: string; duration_seconds: number; completed: boolean };
 
 const subjectSeeds = [
   { name: 'Mathematics', description: 'Think it through. Solve it your way.', theme: 'emerald', chapters: ['Real Numbers', 'Polynomials', 'Pair of Linear Equations in Two Variables', 'Quadratic Equations', 'Arithmetic Progressions', 'Triangles', 'Coordinate Geometry', 'Introduction to Trigonometry', 'Some Applications of Trigonometry', 'Circles', 'Areas Related to Circles', 'Surface Areas and Volumes', 'Statistics', 'Probability'] },
@@ -38,19 +40,37 @@ function Index() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [progress, setProgress] = useState<Progress[]>([]);
+  const [focusSessions, setFocusSessions] = useState<FocusSummary[]>([]);
   const [profile, setProfile] = useState<{ full_name: string | null; daily_goal_minutes: number; exam_date: string | null } | null>(null);
-  const [tab, setTab] = useState(location.pathname === '/pyqs' ? 'PYQs' : location.pathname === '/study' ? 'Study' : 'Home');
+  const [tab, setTab] = useState(location.pathname === '/pyqs' ? 'PYQs' : location.pathname === '/focus' ? 'Focus' : location.pathname === '/study' ? 'Study' : 'Home');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [search, setSearch] = useState('');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState('');
-  const [sessionMinutes] = useState(0);
+  const [focusChip, setFocusChip] = useState('');
 
   useEffect(() => {
     if (location.pathname === '/pyqs') setTab('PYQs');
+    else if (location.pathname === '/focus') setTab('Focus');
     else if (location.pathname === '/study') setTab('Study');
     else if (location.pathname === '/' || location.pathname === '/dashboard') setTab('Home');
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    const updateChip = () => {
+      try {
+        const raw = localStorage.getItem(`edvora-focus:${session.user.id}`);
+        if (!raw) { setFocusChip(''); return; }
+        const timer = JSON.parse(raw);
+        const remaining = Math.max(0, timer.remainingMs - (timer.status === 'running' && timer.startedAt ? Date.now() - timer.startedAt : 0));
+        setFocusChip(`${timer.status === 'paused' ? 'Paused' : ''} ${String(Math.ceil(remaining / 60000)).padStart(2, '0')}:${String(Math.floor(remaining / 1000) % 60).padStart(2, '0')}`.trim());
+      } catch { setFocusChip(''); }
+    };
+    updateChip();
+    const interval = window.setInterval(updateChip, 1000);
+    return () => window.clearInterval(interval);
+  }, [session]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
@@ -92,8 +112,11 @@ function Index() {
       }
       if (!alive) return;
       setChapters(chapterList);
-      const { data: progressRows } = await supabase.from('chapter_progress').select('chapter_id,status,bookmarked').eq('user_id', uid);
-      if (alive) setProgress((progressRows ?? []) as Progress[]);
+      const [{ data: progressRows }, { data: focusRows }] = await Promise.all([
+        supabase.from('chapter_progress').select('chapter_id,status,bookmarked').eq('user_id', uid),
+        supabase.from('focus_sessions').select('id,subject_id,started_at,duration_seconds,completed').eq('user_id', uid).order('started_at', { ascending: false }).limit(100),
+      ]);
+      if (alive) { setProgress((progressRows ?? []) as Progress[]); setFocusSessions((focusRows ?? []) as FocusSummary[]); }
     };
     void load();
     return () => { alive = false; };
@@ -103,6 +126,11 @@ function Index() {
   const displayName = profile?.full_name || session?.user.user_metadata?.full_name || session?.user.email?.split('@')[0] || 'Student';
   const firstName = displayName.split(/[ ._-]/)[0];
   const now = new Date();
+  const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  const todayFocusSeconds = focusSessions.filter(item => dayKey(new Date(item.started_at)) === dayKey(now)).reduce((sum, item) => sum + item.duration_seconds, 0);
+  const totalFocusSeconds = focusSessions.reduce((sum, item) => sum + item.duration_seconds, 0);
+  const dailyGoal = profile?.daily_goal_minutes ?? 120;
+  const weeklyDays = new Set(focusSessions.filter(item => Date.now() - new Date(item.started_at).getTime() < 7 * 86400000).map(item => dayKey(new Date(item.started_at)))).size;
   const greeting = now.getHours() < 12 ? 'Good morning' : now.getHours() < 18 ? 'Good afternoon' : 'Good evening';
   const selected = subjects.find(s => s.id === selectedSubject);
   const shownChapters = useMemo(() => chapters.filter(chapter => (!selectedSubject || chapter.subject_id === selectedSubject) && chapter.title.toLowerCase().includes(search.toLowerCase())), [chapters, selectedSubject, search]);
@@ -120,7 +148,7 @@ function Index() {
   if (loading) return <div className="loading-screen"><span className="loading-logo"><BookOpen size={23}/></span><span>Getting your desk ready…</span></div>;
   if (!signedIn) return <SignIn/>;
 
-  const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (name === 'PYQs') navigate('/pyqs'); else if (name === 'Study') navigate('/study'); else if (name === 'Home') navigate('/dashboard'); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); if (name === 'PYQs') window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (name === 'PYQs') navigate('/pyqs'); else if (name === 'Focus') navigate('/focus'); else if (name === 'Study') navigate('/study'); else if (name === 'Home') navigate('/dashboard'); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); if (name === 'PYQs' || name === 'Focus') window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const startStudy = (name: string) => { setSelectedSubject(name); goTab('Study'); document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3000); };
 
@@ -128,20 +156,20 @@ function Index() {
     <aside className="sidebar">
       <div className="sidebar-brand"><Brand /><span className="brand-school">YOUR CLASS 10 STUDY SPACE</span></div>
       <div className="side-scroll"><div className="nav-label">YOUR SPACE</div><nav className="side-nav">{navItems.map(item => <button key={item.name} onClick={() => goTab(item.name)} className={`nav-link ${tab === item.name ? 'active' : ''}`}><item.icon size={18}/><span>{item.name}</span>{item.name === 'Focus' && <span className="nav-live"/>}</button>)}</nav><div className="nav-label tools-label">STUDY TOOLS</div><nav className="side-nav">{sideTools.map(item => <button key={item.name} onClick={() => item.name === 'Bookmarks' ? goTab('Bookmarks') : notify(`${item.name} is coming to your study space soon`)} className={`nav-link ${tab === item.name ? 'active' : ''}`}><item.icon size={18}/><span>{item.name}</span>{item.name === 'Bookmarks' && bookmarkedCount > 0 && <span className="nav-count">{bookmarkedCount}</span>}</button>)}</nav></div>
-      <div className="sidebar-bottom"><button className="focus-mini" onClick={() => goTab('Focus')}><span className="focus-mini-icon"><Timer size={18}/></span><span className="focus-mini-copy"><b>Ready when you are</b><small>Start a focus session</small></span><ChevronRight size={16}/></button><div className="sidebar-user"><span className="avatar-small">{firstName.charAt(0).toUpperCase()}</span><span className="user-copy"><b>{firstName}</b><small>Class 10 · CBSE</small></span><button className="icon-plain" aria-label="Settings" onClick={() => notify('Account settings are coming soon')}><Settings2 size={17}/></button></div></div>
+      <div className="sidebar-bottom"><button className="focus-mini" onClick={() => goTab('Focus')}><span className="focus-mini-icon"><Timer size={18}/></span><span className="focus-mini-copy"><b>{focusChip?`Focus · ${focusChip}`:'Ready when you are'}</b><small>{focusChip?'Your timer is still running':'Start a focus session'}</small></span><ChevronRight size={16}/></button><div className="sidebar-user"><span className="avatar-small">{firstName.charAt(0).toUpperCase()}</span><span className="user-copy"><b>{firstName}</b><small>Class 10 · CBSE</small></span><button className="icon-plain" aria-label="Settings" onClick={() => notify('Account settings are coming soon')}><Settings2 size={17}/></button></div></div>
     </aside>
     <div className="main-column">
-      <header className="topbar"><button className="mobile-brand" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20}/></button><div className="breadcrumbs"><span>EDVORA</span><ChevronRight size={13}/><b>{tab}</b></div><div className="top-actions"><button className="search-trigger" onClick={() => document.getElementById(tab==='PYQs'?'pyq-search':'chapter-search')?.focus()}><Search size={16}/><span>Search anything</span><kbd>⌘ K</kbd></button><button className="top-icon" aria-label="Notifications" onClick={() => notify('You’re all caught up')}><Bell size={18}/><i/></button><button className="avatar-top" onClick={() => notify('Profile settings coming soon')}>{firstName.charAt(0).toUpperCase()}</button></div></header>
+      <header className="topbar"><button className="mobile-brand" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20}/></button><div className="breadcrumbs"><span>EDVORA</span><ChevronRight size={13}/><b>{tab}</b></div><div className="top-actions">{focusChip&&<button className="live-focus-chip" onClick={()=>goTab('Focus')}><span/> {focusChip} <Timer size={13}/></button>}<button className="search-trigger" onClick={() => document.getElementById(tab==='PYQs'?'pyq-search':'chapter-search')?.focus()}><Search size={16}/><span>Search anything</span><kbd>⌘ K</kbd></button><button className="top-icon" aria-label="Notifications" onClick={() => notify('You’re all caught up')}><Bell size={18}/><i/></button><button className="avatar-top" onClick={() => notify('Profile settings coming soon')}>{firstName.charAt(0).toUpperCase()}</button></div></header>
       {mobileMenu && <div className="mobile-menu">{[...navItems,...sideTools.map(tool => ({...tool, name: tool.name === 'Quick revision' ? 'Revision' : tool.name}))].map(item => <button key={item.name} onClick={() => goTab(item.name)}><item.icon size={18}/>{item.name}</button>)}</div>}
-      {tab==='PYQs' ? <PYQLibrary userId={session.user.id} subjects={subjects} chapters={chapters}/> : <main className="dashboard">
+      {tab==='PYQs' ? <PYQLibrary userId={session.user.id} subjects={subjects} chapters={chapters}/> : tab==='Focus' ? <FocusPage userId={session.user.id} subjects={subjects} chapters={chapters}/> : <main className="dashboard">
         <div className="welcome-row"><div><div className="session-tag"><span/> YOUR 2026–27 STUDY SPACE</div><h1>{greeting}, {firstName}<span className="greeting-comma">.</span></h1><p className="welcome-sub">A new day is a new chance to get a little closer.</p></div><div className="date-pill"><span className="date-icon"><Sun size={17}/></span><span><b>{now.toLocaleDateString('en-US',{weekday:'long'})}</b><small>{now.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</small></span><ChevronDown size={15}/></div></div>
         <section className="hero-card"><div className="hero-content"><div className="hero-kicker"><span className="sparkle-dot"><Sparkles size={12}/></span> A NOTE FOR TODAY</div><h2>Small steps.<br/><em>Bright futures.</em></h2><p>Every page you read, every problem you solve — it all adds up. Keep showing up for yourself.</p><button onClick={() => goTab('Study')} className="hero-button">Continue your journey <ArrowRight size={16}/></button><div className="hero-note"><span className="note-avatars"><i>I</i><i>✦</i><i>+</i></span><span>Made for the way <b>you learn</b></span></div></div><div className="hero-art" aria-hidden="true"><div className="hero-sun">✳</div><div className="hero-desk"><div className="desk-book"><div/><div/></div><div className="desk-pencil"/><div className="desk-cup"><span/></div></div><div className="hero-plant"><i/><i/><i/><b/></div><div className="hero-lamp"><i/><b/></div><div className="hero-spark sp-a">✳</div><div className="hero-spark sp-b">✦</div><div className="hero-cloud cloud-a"/><div className="hero-cloud cloud-b"/></div><div className="hero-index">01 <span/> 03</div></section>
         <div className="section-heading metric-heading"><div><span className="eyebrow">YOUR MOMENTUM</span><h2>A little goes a long way</h2></div><button className="subtle-link" onClick={() => goTab('Progress')}>View your progress <ArrowRight size={15}/></button></div>
-        <section className="metrics-grid"><MetricCard icon={Clock3} iconClass="lavender" label="STUDY TIME" value={fmtMinutes(sessionMinutes)} sub="Across all your sessions"/><MetricCard icon={Target} iconClass="peach" label="TODAY’S FOCUS" value="0 min" sub={`Your daily goal · ${profile?.daily_goal_minutes ?? 120} min`} progress={0}/><MetricCard icon={BookOpen} iconClass="mint" label="CHAPTERS DONE" value={String(completedCount).padStart(2,'0')} sub={`Out of ${chapters.length || 0} chapters`} trend="Keep it up"/><MetricCard icon={Bookmark} iconClass="butter" label="SAVED FOR LATER" value={String(bookmarkedCount).padStart(2,'0')} sub="Your little collection"/></section>
+        <section className="metrics-grid"><MetricCard icon={Clock3} iconClass="lavender" label="STUDY TIME" value={fmtMinutes(Math.floor(totalFocusSeconds/60))} sub="Across all your sessions"/><MetricCard icon={Target} iconClass="peach" label="TODAY’S FOCUS" value={`${Math.floor(todayFocusSeconds/60)} min`} sub={`Your daily goal · ${dailyGoal} min`} progress={Math.min(100,todayFocusSeconds/(dailyGoal*60)*100)}/><MetricCard icon={BookOpen} iconClass="mint" label="CHAPTERS DONE" value={String(completedCount).padStart(2,'0')} sub={`Out of ${chapters.length || 0} chapters`} trend="Keep it up"/><MetricCard icon={Bookmark} iconClass="butter" label="SAVED FOR LATER" value={String(bookmarkedCount).padStart(2,'0')} sub="Your little collection"/></section>
         <section className="learning-layout"><div className="learning-main" id="study-library"><div className="section-heading"><div><span className="eyebrow">PICK UP WHEREVER YOU LIKE</span><h2>Your study library</h2></div><button className="text-link" onClick={() => {setSelectedSubject(''); setTab('Study')}}>All subjects <ArrowRight size={15}/></button></div><div className="subject-grid">{subjects.map((subject,index) => {const Icon=iconFor(subject.name); const count=chapters.filter(c=>c.subject_id===subject.id).length; const done=chapters.filter(c=>c.subject_id===subject.id && progressFor(c.id)?.status==='completed').length; return <button key={subject.id} className={`subject-card subject-${subject.theme} ${selectedSubject===subject.id?'subject-selected':''}`} onClick={()=>{setSelectedSubject(selectedSubject===subject.id?'':subject.id);setTab('Study')}}><span className="subject-top"><span className="subject-icon"><Icon size={20}/></span><span className="subject-arrow"><ArrowDownRight size={16}/></span></span><span className="subject-name">{subject.name}</span><span className="subject-desc">{subject.description}</span><span className="subject-bottom"><span>{count ? `${count} chapters` : 'Explore chapters'}</span><span className="subject-progress">{done}/{count || '—'} <i style={{width: count ? `${Math.round(done/count*100)}%` : '0%'}}/></span></span><span className={`subject-decoration deco-${index}`}>{subject.name==='Mathematics'?'∑':subject.name==='Science'?'✳':subject.name==='Social Science'?'◉':'✦'}</span></button>})}</div>
         <div className="chapter-heading"><div><span className="eyebrow">{selected ? selected.name.toUpperCase() : 'A GOOD PLACE TO START'}</span><h2>{selected ? 'Chapter shelf' : 'Your chapters'}</h2></div><div className="chapter-tools"><div className="chapter-search"><Search size={15}/><input id="chapter-search" placeholder="Find a chapter" value={search} onChange={event=>setSearch(event.target.value)}/>{search&&<button onClick={()=>setSearch('')} aria-label="Clear search"><X size={13}/></button>}</div><button className="filter-button" onClick={()=>setSelectedSubject('')}><span>{selected?.name.split(' ')[0] ?? 'All subjects'}</span><ChevronDown size={14}/></button></div></div>
         <div className="chapter-list">{shownChapters.slice(0,8).map(chapter=>{const subject=subjects.find(s=>s.id===chapter.subject_id);const status=progressFor(chapter.id)?.status??'not_started';const saved=progressFor(chapter.id)?.bookmarked??false;return <article className="chapter-row" key={chapter.id}><div className={`chapter-number theme-${subject?.theme??'violet'}`}>{String(chapter.chapter_number).padStart(2,'0')}</div><div className="chapter-title"><span>{chapter.title}</span><small>{subject?.name} <i/> Chapter {chapter.chapter_number}</small></div><span className={`chapter-status status-${status}`}>{status==='completed'?<Check size={12}/>:status==='in_progress'?<span className="status-pulse"/>:null}{status.replace('_',' ')}</span><button className={`bookmark-button ${saved?'is-saved':''}`} aria-label={saved?'Remove bookmark':'Bookmark chapter'} onClick={()=>void ensureProgress(chapter.id,{bookmarked:!saved})}><Bookmark size={17} fill={saved?'currentColor':'none'}/></button><button className="chapter-open" aria-label={`Open ${chapter.title}`} onClick={()=>chapter.notes_status==='available'?notify(`Opening notes for ${chapter.title}`):notify('Handwritten notes for this chapter are coming soon')}><ChevronRight size={17}/></button></article>})}{shownChapters.length===0&&<div className="empty-chapters"><Search size={22}/><b>No chapters found</b><span>Try another name or choose a different subject.</span></div>}</div><button className="all-chapters" onClick={()=>notify('You’re already on your chapter shelf')}>See all {selected?.name ?? 'chapters'} <ArrowRight size={15}/></button></div>
-        <aside className="learning-aside"><div className="aside-head"><div><span className="eyebrow">YOUR DAILY RHYTHM</span><h3>Today, in focus</h3></div><MoreHorizontal size={19}/></div><div className="focus-empty"><div className="focus-ring"><div className="focus-ring-inner"><Clock3 size={22}/><b>00:00</b><span>FOCUSED</span></div></div><p>Every focused minute<br/>starts with one.</p><button onClick={()=>goTab('Focus')}>Start a focus session <ArrowRight size={14}/></button></div><div className="aside-divider"/><div className="week-head"><div><span className="eyebrow">YOUR WEEK</span><h3>Show up, your way</h3></div><span className="week-total">0 / 7 days</span></div><div className="week-chart">{['M','T','W','T','F','S','S'].map((day,index)=><div className="week-day" key={`${day}-${index}`}><div className="week-bar-wrap"><i className={index===now.getDay()-1?'today-bar':''} style={{height:index===now.getDay()-1?'17%':`${[24,62,38,78,33,56,21][index]}%`}}/></div><span className={index===now.getDay()-1?'is-today':''}>{day}</span></div>)}</div><div className="week-foot"><span><span className="week-dot"/> One session at a time</span><ArrowRight size={14}/></div><div className="streak-card"><span className="streak-icon"><Flame size={17}/></span><span><b>Build your rhythm</b><small>One focused day at a time</small></span><span className="streak-days">0 <small>days</small></span></div></aside></section>
+        <aside className="learning-aside"><div className="aside-head"><div><span className="eyebrow">YOUR DAILY RHYTHM</span><h3>Today, in focus</h3></div><MoreHorizontal size={19}/></div><div className="focus-empty"><div className="focus-ring"><div className="focus-ring-inner"><Clock3 size={22}/><b>00:00</b><span>FOCUSED</span></div></div><p>Every focused minute<br/>starts with one.</p><button onClick={()=>goTab('Focus')}>Start a focus session <ArrowRight size={14}/></button></div><div className="aside-divider"/><div className="week-head"><div><span className="eyebrow">YOUR WEEK</span><h3>Show up, your way</h3></div><span className="week-total">{weeklyDays} / 7 days</span></div><div className="week-chart">{['M','T','W','T','F','S','S'].map((day,index)=><div className="week-day" key={`${day}-${index}`}><div className="week-bar-wrap"><i className={index===now.getDay()-1?'today-bar':''} style={{height:index===now.getDay()-1?'17%':`${[24,62,38,78,33,56,21][index]}%`}}/></div><span className={index===now.getDay()-1?'is-today':''}>{day}</span></div>)}</div><div className="week-foot"><span><span className="week-dot"/> One session at a time</span><ArrowRight size={14}/></div><div className="streak-card"><span className="streak-icon"><Flame size={17}/></span><span><b>Build your rhythm</b><small>One focused day at a time</small></span><span className="streak-days">0 <small>days</small></span></div></aside></section>
         <section className="bottom-nudge"><div className="nudge-icon"><Leaf size={20}/></div><div><span className="eyebrow">A GENTLE REMINDER</span><p>You don’t have to do it all today. Just take the <em>next small step.</em></p></div><button onClick={()=>goTab('Focus')}>Take a moment <ArrowRight size={15}/></button><span className="nudge-spark">✳</span></section>
         <footer className="footer"><span>© 2026 EDVORA</span><span>Made for curious minds <span className="footer-heart">✳</span></span><button onClick={()=>notify('Need a hand? Reach out to your administrator')}><CircleHelp size={14}/> Need a hand?</button></footer>
       </main>}
