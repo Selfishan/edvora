@@ -19,6 +19,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/dashboard" element={<Index />} />
           <Route path="/study" element={<Index />} />
+          <Route path="/pyqs" element={<Index />} />
           <Route path="/auth/callback" element={<Index />} />
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { Session } from '@supabase/supabase-js';
 import {
   ArrowDownRight, ArrowRight, Atom, Bell, BookMarked, BookOpen, Bookmark, Check,
@@ -9,6 +10,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Brand, SignIn } from '@/components/SignIn';
+import PYQLibrary from '@/components/PYQLibrary';
 
 type Subject = { id: string; name: string; description: string; theme: string; sort_order: number };
 type Chapter = { id: string; subject_id: string; chapter_number: number; title: string; description: string; ncert_unit: string; notes_status: 'available' | 'coming_soon' };
@@ -29,18 +31,26 @@ const sideTools = [{ name: 'Quick revision', icon: Zap }, { name: 'Bookmarks', i
 const fmtMinutes = (minutes: number) => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 
 function Index() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [progress, setProgress] = useState<Progress[]>([]);
   const [profile, setProfile] = useState<{ full_name: string | null; daily_goal_minutes: number; exam_date: string | null } | null>(null);
-  const [tab, setTab] = useState('Home');
+  const [tab, setTab] = useState(location.pathname === '/pyqs' ? 'PYQs' : location.pathname === '/study' ? 'Study' : 'Home');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [search, setSearch] = useState('');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState('');
   const [sessionMinutes] = useState(0);
+
+  useEffect(() => {
+    if (location.pathname === '/pyqs') setTab('PYQs');
+    else if (location.pathname === '/study') setTab('Study');
+    else if (location.pathname === '/' || location.pathname === '/dashboard') setTab('Home');
+  }, [location.pathname]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
@@ -110,7 +120,7 @@ function Index() {
   if (loading) return <div className="loading-screen"><span className="loading-logo"><BookOpen size={23}/></span><span>Getting your desk ready…</span></div>;
   if (!signedIn) return <SignIn/>;
 
-  const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
+  const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (name === 'PYQs') navigate('/pyqs'); else if (name === 'Study') navigate('/study'); else if (name === 'Home') navigate('/dashboard'); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); if (name === 'PYQs') window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const startStudy = (name: string) => { setSelectedSubject(name); goTab('Study'); document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
   const notify = (text: string) => { setNotice(text); window.setTimeout(() => setNotice(''), 3000); };
 
@@ -121,9 +131,9 @@ function Index() {
       <div className="sidebar-bottom"><button className="focus-mini" onClick={() => goTab('Focus')}><span className="focus-mini-icon"><Timer size={18}/></span><span className="focus-mini-copy"><b>Ready when you are</b><small>Start a focus session</small></span><ChevronRight size={16}/></button><div className="sidebar-user"><span className="avatar-small">{firstName.charAt(0).toUpperCase()}</span><span className="user-copy"><b>{firstName}</b><small>Class 10 · CBSE</small></span><button className="icon-plain" aria-label="Settings" onClick={() => notify('Account settings are coming soon')}><Settings2 size={17}/></button></div></div>
     </aside>
     <div className="main-column">
-      <header className="topbar"><button className="mobile-brand" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20}/></button><div className="breadcrumbs"><span>EDVORA</span><ChevronRight size={13}/><b>{tab}</b></div><div className="top-actions"><button className="search-trigger" onClick={() => document.getElementById('chapter-search')?.focus()}><Search size={16}/><span>Search anything</span><kbd>⌘ K</kbd></button><button className="top-icon" aria-label="Notifications" onClick={() => notify('You’re all caught up')}><Bell size={18}/><i/></button><button className="avatar-top" onClick={() => notify('Profile settings coming soon')}>{firstName.charAt(0).toUpperCase()}</button></div></header>
+      <header className="topbar"><button className="mobile-brand" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20}/></button><div className="breadcrumbs"><span>EDVORA</span><ChevronRight size={13}/><b>{tab}</b></div><div className="top-actions"><button className="search-trigger" onClick={() => document.getElementById(tab==='PYQs'?'pyq-search':'chapter-search')?.focus()}><Search size={16}/><span>Search anything</span><kbd>⌘ K</kbd></button><button className="top-icon" aria-label="Notifications" onClick={() => notify('You’re all caught up')}><Bell size={18}/><i/></button><button className="avatar-top" onClick={() => notify('Profile settings coming soon')}>{firstName.charAt(0).toUpperCase()}</button></div></header>
       {mobileMenu && <div className="mobile-menu">{[...navItems,...sideTools.map(tool => ({...tool, name: tool.name === 'Quick revision' ? 'Revision' : tool.name}))].map(item => <button key={item.name} onClick={() => goTab(item.name)}><item.icon size={18}/>{item.name}</button>)}</div>}
-      <main className="dashboard">
+      {tab==='PYQs' ? <PYQLibrary userId={session.user.id} subjects={subjects} chapters={chapters}/> : <main className="dashboard">
         <div className="welcome-row"><div><div className="session-tag"><span/> YOUR 2026–27 STUDY SPACE</div><h1>{greeting}, {firstName}<span className="greeting-comma">.</span></h1><p className="welcome-sub">A new day is a new chance to get a little closer.</p></div><div className="date-pill"><span className="date-icon"><Sun size={17}/></span><span><b>{now.toLocaleDateString('en-US',{weekday:'long'})}</b><small>{now.toLocaleDateString('en-US',{month:'long',day:'numeric'})}</small></span><ChevronDown size={15}/></div></div>
         <section className="hero-card"><div className="hero-content"><div className="hero-kicker"><span className="sparkle-dot"><Sparkles size={12}/></span> A NOTE FOR TODAY</div><h2>Small steps.<br/><em>Bright futures.</em></h2><p>Every page you read, every problem you solve — it all adds up. Keep showing up for yourself.</p><button onClick={() => goTab('Study')} className="hero-button">Continue your journey <ArrowRight size={16}/></button><div className="hero-note"><span className="note-avatars"><i>I</i><i>✦</i><i>+</i></span><span>Made for the way <b>you learn</b></span></div></div><div className="hero-art" aria-hidden="true"><div className="hero-sun">✳</div><div className="hero-desk"><div className="desk-book"><div/><div/></div><div className="desk-pencil"/><div className="desk-cup"><span/></div></div><div className="hero-plant"><i/><i/><i/><b/></div><div className="hero-lamp"><i/><b/></div><div className="hero-spark sp-a">✳</div><div className="hero-spark sp-b">✦</div><div className="hero-cloud cloud-a"/><div className="hero-cloud cloud-b"/></div><div className="hero-index">01 <span/> 03</div></section>
         <div className="section-heading metric-heading"><div><span className="eyebrow">YOUR MOMENTUM</span><h2>A little goes a long way</h2></div><button className="subtle-link" onClick={() => goTab('Progress')}>View your progress <ArrowRight size={15}/></button></div>
@@ -134,9 +144,9 @@ function Index() {
         <aside className="learning-aside"><div className="aside-head"><div><span className="eyebrow">YOUR DAILY RHYTHM</span><h3>Today, in focus</h3></div><MoreHorizontal size={19}/></div><div className="focus-empty"><div className="focus-ring"><div className="focus-ring-inner"><Clock3 size={22}/><b>00:00</b><span>FOCUSED</span></div></div><p>Every focused minute<br/>starts with one.</p><button onClick={()=>goTab('Focus')}>Start a focus session <ArrowRight size={14}/></button></div><div className="aside-divider"/><div className="week-head"><div><span className="eyebrow">YOUR WEEK</span><h3>Show up, your way</h3></div><span className="week-total">0 / 7 days</span></div><div className="week-chart">{['M','T','W','T','F','S','S'].map((day,index)=><div className="week-day" key={`${day}-${index}`}><div className="week-bar-wrap"><i className={index===now.getDay()-1?'today-bar':''} style={{height:index===now.getDay()-1?'17%':`${[24,62,38,78,33,56,21][index]}%`}}/></div><span className={index===now.getDay()-1?'is-today':''}>{day}</span></div>)}</div><div className="week-foot"><span><span className="week-dot"/> One session at a time</span><ArrowRight size={14}/></div><div className="streak-card"><span className="streak-icon"><Flame size={17}/></span><span><b>Build your rhythm</b><small>One focused day at a time</small></span><span className="streak-days">0 <small>days</small></span></div></aside></section>
         <section className="bottom-nudge"><div className="nudge-icon"><Leaf size={20}/></div><div><span className="eyebrow">A GENTLE REMINDER</span><p>You don’t have to do it all today. Just take the <em>next small step.</em></p></div><button onClick={()=>goTab('Focus')}>Take a moment <ArrowRight size={15}/></button><span className="nudge-spark">✳</span></section>
         <footer className="footer"><span>© 2026 EDVORA</span><span>Made for curious minds <span className="footer-heart">✳</span></span><button onClick={()=>notify('Need a hand? Reach out to your administrator')}><CircleHelp size={14}/> Need a hand?</button></footer>
-      </main>
+      </main>}
     </div>
-    <nav className="mobile-bottom">{navItems.map(item=><button key={item.name} className={tab===item.name?'selected':''} onClick={()=>goTab(item.name)}><item.icon size={19}/><span>{item.name}</span></button>)}<button onClick={()=>setMobileMenu(!mobileMenu)}><MoreHorizontal size={19}/><span>More</span></button></nav>
+    <nav className="mobile-bottom">{navItems.map(item=><button key={item.name} className={tab===item.name?'selected':''} onClick={() => goTab(item.name)}><item.icon size={19}/><span>{item.name}</span></button>)}<button onClick={()=>setMobileMenu(!mobileMenu)}><MoreHorizontal size={19}/><span>More</span></button></nav>
     {notice&&<div className="toast-note"><span>✦</span>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
     <button className="signout-button" onClick={async()=>{await supabase.auth.signOut();sessionStorage.removeItem('edvora-admin')}}>Sign out</button>
   </div>;
