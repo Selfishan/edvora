@@ -46,7 +46,7 @@ export default function FocusPage({userId,subjects,chapters}:Props){
     if(seconds<1)return;
     const finished=finishedAt;
     const {data}=await supabase.from('focus_sessions').insert({user_id:userId,subject_id:record.subjectId,chapter_id:record.chapterId||null,mode:record.mode,objective:record.objective,started_at:new Date(startedAt).toISOString(),finished_at:new Date(finished).toISOString(),duration_seconds:seconds,completed}).select('id,subject_id,chapter_id,mode,objective,started_at,finished_at,duration_seconds,completed').single();
-    if(data)setHistory(previous=>[data as FocusSession,...previous]);
+    if(data){setHistory(previous=>[data as FocusSession,...previous]);const {data:goals}=await supabase.from('study_goals').select('id,current_value,target_value').eq('user_id',userId).eq('category','study_minutes');for(const goal of goals??[]){const current=Number(goal.current_value);const target=Number(goal.target_value);if(current>=target)continue;const value=current+seconds/60;await supabase.from('study_goals').update({current_value:value,completed_at:value>=target?new Date().toISOString():null}).eq('id',goal.id).eq('user_id',userId)}}
   };
 
   useEffect(()=>{
