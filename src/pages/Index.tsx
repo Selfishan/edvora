@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Auth } from '@supabase/auth-ui-react';
-import { ThemeSupa } from '@supabase/auth-ui-shared';
 import type { Session } from '@supabase/supabase-js';
-import { Link } from 'react-router-dom';
 import {
   ArrowDownRight, ArrowRight, Atom, Bell, BookMarked, BookOpen, Bookmark, Check,
   ChevronDown, ChevronRight, CircleHelp, Clock3, Flame, FlaskConical, Globe2,
@@ -11,6 +8,7 @@ import {
   Timer, TrendingUp, X, Zap,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { Brand, SignIn } from '@/components/SignIn';
 
 type Subject = { id: string; name: string; description: string; theme: string; sort_order: number };
 type Chapter = { id: string; subject_id: string; chapter_number: number; title: string; description: string; ncert_unit: string; notes_status: 'available' | 'coming_soon' };
@@ -29,13 +27,6 @@ const iconFor = (name: string) => name === 'Mathematics' ? Sigma : name === 'Sci
 const navItems = [{ name: 'Home', icon: Home }, { name: 'Study', icon: Library }, { name: 'PYQs', icon: BookMarked }, { name: 'Focus', icon: Timer }, { name: 'Progress', icon: TrendingUp }];
 const sideTools = [{ name: 'Quick revision', icon: Zap }, { name: 'Bookmarks', icon: Bookmark }, { name: 'Planner', icon: Target }, { name: 'Notebook', icon: BookOpen }];
 const fmtMinutes = (minutes: number) => `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
-
-function SignIn({ onSession }: { onSession: (session: Session | null) => void }) {
-  const callback = new URL('/auth/callback', window.location.origin).href;
-  return <main className="auth-wrap"><div className="auth-card"><Brand /><div className="auth-copy"><span className="eyebrow">YOUR STUDY SPACE</span><h1>A little progress,<br /><em>every day.</em></h1><p>Sign in to pick up exactly where you left off. Your notes, goals and progress stay yours.</p></div><Auth supabaseClient={supabase} redirectTo={callback} providers={[]} appearance={{ theme: ThemeSupa, variables: { default: { colors: { brand: '#7057dc', brandAccent: '#5940c4', inputBorder: '#e5e4ed', inputBorderFocus: '#7057dc', inputLabelText: '#57566a' }, radii: { borderRadiusButton: '12px', buttonBorderRadius: '12px', inputBorderRadius: '12px' } } } }} theme="light" /><div className="auth-privacy"><span className="privacy-dot" /> A private, secure space built for your learning journey</div></div><div className="auth-art"><div className="art-orbit orbit-a"/><div className="art-orbit orbit-b"/><div className="art-glow"/><div className="art-book"><div className="book-page left-page"><span>✦</span><i/><i/><i/><b>learn at<br/>your pace</b></div><div className="book-page right-page"><div className="book-sun">✳</div><i/><i/><i/><span>EDVORA</span></div></div><div className="art-sticker sticker-one"><Sparkles size={15}/> A fresh start</div><div className="art-sticker sticker-two"><span className="streak-mark">✦</span> You’ve got this</div><div className="art-caption"><span>01 — ONE STEP AT A TIME</span><h2>Your effort<br/>adds up.</h2></div></div></main>;
-}
-
-function Brand() { return <a className="brand" href="/dashboard"><span className="brand-icon"><BookOpen size={20} strokeWidth={2.4}/><span/></span><span>edvora<span className="brand-period">.</span></span></a>; }
 
 function Index() {
   const [session, setSession] = useState<Session | null>(null);
@@ -117,7 +108,7 @@ function Index() {
   };
 
   if (loading) return <div className="loading-screen"><span className="loading-logo"><BookOpen size={23}/></span><span>Getting your desk ready…</span></div>;
-  if (!signedIn) return <SignIn onSession={setSession}/>;
+  if (!signedIn) return <SignIn/>;
 
   const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
   const startStudy = (name: string) => { setSelectedSubject(name); goTab('Study'); document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
