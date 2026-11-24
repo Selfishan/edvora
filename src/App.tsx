@@ -21,6 +21,7 @@ const App = () => (
           <Route path="/study" element={<Index />} />
           <Route path="/pyqs" element={<Index />} />
           <Route path="/focus" element={<Index />} />
+          <Route path="/progress" element={<Index />} />
           <Route path="/revision" element={<Index />} />
           <Route path="/bookmarks" element={<Index />} />
           <Route path="/planner" element={<Index />} />
