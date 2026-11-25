@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { BookOpen, Sparkles } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 
 export function Brand() {
@@ -22,7 +23,7 @@ export function SignIn() {
     const permission = mode === 'signup' && reminderOptIn && 'Notification' in window ? await Notification.requestPermission() : 'default';
     const result = mode === 'signin'
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, grade: Number(grade) }, emailRedirectTo: new URL('/auth/callback', window.location.origin).href } });
+      : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, grade: Number(grade) }, emailRedirectTo: Capacitor.isNativePlatform() ? 'edvora://auth/callback' : new URL('/auth/callback', window.location.origin).href } });
     setBusy(false);
     if (result.error) setError(result.error.message);
     else {
