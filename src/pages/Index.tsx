@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Brand, SignIn } from '@/components/SignIn';
+import { DeveloperWelcome } from '@/components/DeveloperWelcome';
 import PYQLibrary from '@/components/PYQLibrary';
 import FocusPage from '@/components/FocusPage';
 import ToolsPage from '@/components/ToolsPage';
@@ -60,6 +61,7 @@ function Index() {
   const [viewer, setViewer] = useState<NoteViewer|null>(null);
   const [studyChapter, setStudyChapter] = useState<Chapter|null>(null);
   const [announcement, setAnnouncement] = useState<Announcement|null>(null);
+  const [showDeveloperWelcome, setShowDeveloperWelcome] = useState(false);
   const [tab, setTab] = useState(routeTabs[location.pathname] ?? 'Home');
   const [selectedSubject, setSelectedSubject] = useState('');
   const [search, setSearch] = useState('');
@@ -98,7 +100,10 @@ function Index() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === 'SIGNED_IN') setShowDeveloperWelcome(true);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -196,7 +201,7 @@ function Index() {
 
   if (loading) return <div className="loading-screen"><span className="loading-logo"><BookOpen size={23}/></span><span>Getting your desk ready…</span></div>;
   if (!signedIn) return <SignIn/>;
-  if (!isAdmin && selectedSubjectIds !== null && selectedSubjectIds.length === 0) return <SubjectSetup subjects={subjects} onSave={saveSubjectChoices}/>;
+  if (!isAdmin && selectedSubjectIds !== null && selectedSubjectIds.length === 0) return <><SubjectSetup subjects={subjects} onSave={saveSubjectChoices}/>{showDeveloperWelcome&&<DeveloperWelcome username={displayName} onClose={()=>setShowDeveloperWelcome(false)}/>}</>;
 
   const goTab = (name: string) => { setTab(name); setMobileMenu(false); if (tabRoutes[name]) navigate(tabRoutes[name]); if (name === 'Study') document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); if (name === 'PYQs' || name === 'Important Questions' || name === 'Focus' || name === 'Progress' || name === 'Search') window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const startStudy = (name: string) => { setSelectedSubject(name); goTab('Study'); document.getElementById('study-library')?.scrollIntoView({ behavior: 'smooth' }); };
@@ -235,6 +240,7 @@ function Index() {
     </div>
     <nav className="mobile-bottom">{navItems.map(item=><button key={item.name} className={tab===item.name?'selected':''} onClick={() => goTab(item.name)}><item.icon size={19}/><span>{item.name}</span></button>)}<button onClick={()=>setMobileMenu(!mobileMenu)}><MoreHorizontal size={19}/><span>More</span></button></nav>
     {studyChapter&&<div className="chapter-actions-overlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setStudyChapter(null)}}><section className="chapter-actions-dialog" role="dialog" aria-modal="true" aria-labelledby="chapter-actions-title"><header><span><small>{subjects.find(subject=>subject.id===studyChapter.subject_id)?.name} · CHAPTER {studyChapter.chapter_number}</small><b id="chapter-actions-title">{studyChapter.title}</b></span><button onClick={()=>setStudyChapter(null)} aria-label="Close chapter options"><X size={18}/></button></header><p>Choose how you’d like to study this chapter.</p><a href="https://ncert.nic.in/textbook.php" target="_blank" rel="noreferrer"><span className="chapter-option-icon">N</span><span><b>NCERT textbook</b><small>Open the official NCERT textbook portal</small></span><SquareArrowOutUpRight size={16}/></a><button className="chapter-resource-button" onClick={()=>{const chapter=studyChapter;setStudyChapter(null);void openNotes(chapter)}}><span className="chapter-option-icon handwritten-icon"><BookOpen size={17}/></span><span><b>Handwritten notes</b><small>Open the latest notes shared for this chapter</small></span><ChevronRight size={17}/></button></section></div>}{viewer&&<div className="notes-overlay" role="dialog" aria-modal="true" aria-label={viewer.title}><div className="notes-dialog"><header><span><b>{viewer.title}</b><small>{chapters.find(chapter=>chapter.id===viewer.chapterId)?.title}</small></span><button onClick={()=>setViewer(null)} aria-label="Close notes"><X size={18}/></button></header><div className="notes-document">{viewer.image?<img src={viewer.url} alt={viewer.title}/>:<iframe title={viewer.title} src={viewer.url}/>}</div><footer><span>{viewer.pageCount?viewer.pageCount+' pages':''}</span><button onClick={()=>{void ensureProgress(viewer.chapterId,{status:'completed'});setViewer(null)}}><Check size={13}/> Mark completed</button><button onClick={()=>{void ensureProgress(viewer.chapterId,{status:'needs_revision'});setViewer(null)}}>Flag for revision</button>{viewer.allowDownload&&<a href={viewer.url} download target="_blank" rel="noreferrer">Download</a>}</footer></div></div>}
+    {showDeveloperWelcome&&<DeveloperWelcome username={displayName} onClose={()=>setShowDeveloperWelcome(false)}/>}
     {notice&&<div className="toast-note"><span>✦</span>{notice}<button onClick={()=>setNotice('')}><X size={14}/></button></div>}
     <StudyReminderRuntime userId={session.user.id}/><button className="signout-button" onClick={async()=>{await supabase.auth.signOut();sessionStorage.removeItem('edvora-admin')}}>Sign out</button>
   </div>;
