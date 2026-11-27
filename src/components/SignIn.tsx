@@ -25,15 +25,20 @@ export function SignIn() {
     setBusy(true);
     setError('');
     setMessage('');
-    const permission = mode === 'signup' && reminderOptIn && 'Notification' in window ? await Notification.requestPermission() : 'default';
-    const result = mode === 'signin'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, grade: Number(grade) }, emailRedirectTo: Capacitor.isNativePlatform() ? 'edvora://auth/callback' : new URL('/auth/callback', window.location.origin).href } });
-    setBusy(false);
-    if (result.error) setError(result.error.message);
-    else {
-      if (permission === 'granted') localStorage.setItem('edvora-reminders-pending', 'true');
-      if (mode === 'signup' && !result.data.session) setMessage('A welcome note is on its way. Check your inbox to confirm your email and join EDVORA.');
+    try {
+      const permission = mode === 'signup' && reminderOptIn && 'Notification' in window ? await Notification.requestPermission() : 'default';
+      const result = mode === 'signin'
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({ email, password, options: { data: { full_name: fullName, grade: Number(grade) }, emailRedirectTo: Capacitor.isNativePlatform() ? 'edvora://auth/callback' : new URL('/auth/callback', window.location.origin).href } });
+      if (result.error) setError(result.error.message);
+      else {
+        if (permission === 'granted') localStorage.setItem('edvora-reminders-pending', 'true');
+        if (mode === 'signup' && !result.data.session) setMessage('A welcome note is on its way. Check your inbox to confirm your email and join EDVORA.');
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to connect right now. Please try again.');
+    } finally {
+      setBusy(false);
     }
   };
 
